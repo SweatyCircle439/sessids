@@ -1,13 +1,88 @@
-const fs = require('node:fs');
+import { readFileSync, writeFileSync, existsSync, write } from 'fs';
+import type {Request, Response} from "express";
 
 const config = {
     lifetime: 86400,
+    /**
+     * @intentional using a non-absolute path because otherwise it would live inside of node_modules/sessids
+     */
     sessfile: "sessions.json"
 };
 
-const loadedsessions = [];
+const loadedsessions:Session[] = [];
 
-class session {
+function readSessions() {
+    try {
+        return readFileSync(config.sessfile, { encoding: 'utf-8' });
+    } catch {
+        const sessions = JSON.stringify({
+            sessions: []
+        });
+        writeFileSync(config.sessfile, sessions);
+        return sessions;
+    }
+}
+
+export class Session {
+    /**
+     * how long the session is still alive for
+     */
+    lifetime:number;
+    /**
+     * the data stored in the object. should not be accessed except for reading purposes or for inpermanent changes
+     * as this is not saved
+     */
+    storeddata: {
+        [key: string]: any
+    };
+    /**
+     * the id of the session
+     */
+    id: string;
+    /**
+     * updates the session
+     */
+    private update: () => void;
+    /**
+     * regenerates the session id
+     */
+    private genid: () => void;
+    /**
+     * destroys the session. this 
+     * - fully deletes all data in the session
+     * - removes it from the sessions file
+     * 
+     * **do not call any function on this session after this as that will recreate the session**
+     * @example session.destroy() // delete the session
+     */
+    destroy: () => void;
+    data: {
+        /**
+         * sets a value on the session
+         * @example session.data.set("username", "SweatyCircle439")
+         * @param scope the property you would like to change
+         * @param value the value you want to set the property to
+         */
+        set: (scope: string, value: any) => void;
+        /**
+         * gets a value on the session
+         * @example session.data.get("username") // returns "SweatyCircle439"
+         * @param scope the property you would like to read
+         * @returns the value of that property on the session
+         */
+        get: (scope: string) => any;
+        /**
+         * deletes a value from the session
+         * @example session.data.remove("username") // logs the user out without destroying the session
+         * @param scope the property on the session you want to remove
+         */
+        remove: (scope: string) => void;
+    }
+    /**
+     * ticks the clock on the session
+     */
+    private wait: () => Promise<void>
+
     constructor(data = {}, lifetime = config.lifetime, id = "") {
         this.lifetime = lifetime;
         this.storeddata = data;
@@ -18,17 +93,17 @@ class session {
                 data: this.storeddata,
                 lifetime: this.lifetime
             }
-            const sessids = fs.readFileSync(config.sessfile);
+            const sessids = readSessions();
             const sessions = JSON.parse(sessids).sessions;
             function set() {
                 for (const index in sessions) {
                     const session = sessions[index];
                     if (session.id == write.id) {
                         sessions[index] = write;
-                        return fs.writeFileSync(config.sessfile, JSON.stringify({sessions: sessions}, null, 4));
+                        return writeFileSync(config.sessfile, JSON.stringify({sessions: sessions}, null, 4));
                     }
                 }
-                return fs.writeFileSync(
+                return writeFileSync(
                     config.sessfile,
                     JSON.stringify(
                         {
@@ -57,19 +132,21 @@ class session {
                     asciiString += String.fromCharCode(i);
                 }
                 asciiString += "!";
-                this.id = Array.from(asciiString);
-                for (let i = this.id.length - 1; i > 0; i--) {
+                const id = Array.from(asciiString);
+                for (let i = id.length - 1; i > 0; i--) {
                     let j = Math.floor(Math.random() * (i + 1));
-                    [this.id[i], this.id[j]] = [this.id[j], this.id[i]];
+                    //@ts-ignore where did you even get string | undefined from all of these are strings
+                    [id[i], id[j]] = [id[j], id[i]];
                 }
                 const backid = Array.from(asciiString);
                 for (let i = backid.length - 1; i > 0; i--) {
                     let j = Math.floor(Math.random() * (i + 1));
+                    //@ts-ignore where did you even get string | undefined from all of these are strings
                     [backid[i], backid[j]] = [backid[j], backid[i]];
                 }
-                this.id = this.id.join("");
+                this.id = id.join("");
                 this.id += backid.join("");
-                const sessids = fs.readFileSync(config.sessfile);
+                const sessids = readSessions();
                 for (const session of JSON.parse(sessids).sessions) {
                     if (session.id == this.id) {
                         return this.genid();
@@ -85,10 +162,10 @@ class session {
             throw error;
         }
         this.destroy = () => {
-            fs.writeFileSync(config.sessfile, JSON.stringify({sessions: JSON.parse(fs.readFileSync(config.sessfile)).sessions.filter(session => session.id !== this.id)}, null, 4));
-            for (const key in this) {
-                if (Object.hasOwnProperty.call(this, key)) {
-                    this[key] = undefined;
+            writeFileSync(config.sessfile, JSON.stringify({sessions: JSON.parse(readSessions()).sessions.filter((session:any) => session.id !== this.id)}, null, 4));
+            for (const key in this.storeddata) {
+                if (Object.hasOwnProperty.call(this.storeddata, key)) {
+                    this.storeddata[key] = undefined;
                 }
             }
         }
@@ -101,15 +178,15 @@ class session {
                 return this.storeddata[scope];
             },
             remove: (scope) => {
-                this.storeddata[scope] = undefined;
+                delete this.storeddata[scope];
                 this.update();
             }
         }
-        this.waiting = async() => {
+        this.wait = async() => {
             while (this.lifetime > 0) {
                 await new Promise((resolve, reject) => {
                     setTimeout(() => {
-                        resolve();
+                        resolve(undefined);
                     }, 1000);
                 });
                 this.lifetime--;
@@ -117,21 +194,20 @@ class session {
             }
             this.destroy();
         }
-        this.waiting();
+        this.wait();
         loadedsessions.push(this);
     }
 }
 
 function findsession(
-    /** @type {{id?: String, data?: {any: any}}} */
-    search
+    search: { id?: string; data?: {[key: string]: string}; }
 ) {
     const results = loadedsessions;
     return results.filter((session) => {
         if (search.data) {
             for (const key in search.data) {
                 if (session.storeddata) {
-                    if (!session.storeddata[key] == search.data[key]) {
+                    if (session.storeddata[key] !== search.data[key]) {
                         return false;
                     }
                 }else {
@@ -152,8 +228,8 @@ function findsession(
     });
 }
 
-function sessions(req, res, next) {
-    let sessionid;
+function sessions(req:Request, res:Response, next:any) {
+    let sessionid:string|undefined;
     if (req.headers.cookie) {
         const cookieArray = req.headers.cookie.split(';');
         cookieArray.forEach(cookie => {
@@ -165,26 +241,25 @@ function sessions(req, res, next) {
     } else {
         sessionid = undefined;
     }
-    function checksession(sessionid) {
+    function checksession(sessionid:string|undefined):Session {
         if (sessionid == undefined) {
-            const sess = new session();
+            const sess = new Session();
             res.cookie("sessid", sess.id);
             return sess;
         }else {
-            existent:if (true) {
-                const results = findsession({id: sessionid});
-                return results.length >= 1 ? results[0] : checksession(undefined);
-            }
+            const results = findsession({id: sessionid});
+            return results[0] ? results[0] : checksession(undefined);
         }
     }
-    /** @type {session} */
-    const sess = checksession(sessionid);
+    const sess: Session = checksession(sessionid);
     req.session = Object.freeze(
         {
             set: sess.data.set,
             get: sess.data.get,
             getAllProperties: () => {
-                const result = {};
+                const result = {} as {
+                    [key: string]: any
+                };
                 for (const key in sess.storeddata) {
                     result[key] = sess.storeddata[key];
                 }
@@ -199,17 +274,18 @@ function sessions(req, res, next) {
     return next();
 }
 
-function configure(scope, value){
+function configure(scope:"sessfile"|"lifetime", value:any){
     if (typeof config[scope] == typeof value) {
+        //@ts-ignore any error here is user error
         config[scope] = value;
     }else {
         throw new Error(`${value} is not a valid value for ${scope}`);
     }
 }
 
-module.exports = (sessfile = config.sessfile) => {
-    if (!fs.existsSync(sessfile)) {
-        fs.writeFileSync(
+export default (sessfile = config.sessfile) => {
+    if (!existsSync(sessfile)) {
+        writeFileSync(
             sessfile,
             JSON.stringify(
                 {
@@ -222,11 +298,11 @@ module.exports = (sessfile = config.sessfile) => {
     }
     configure("sessfile", sessfile);
     try {
-        for (const sess of JSON.parse(fs.readFileSync(config.sessfile)).sessions) {
-            new session(sess.data, sess.lifetime, sess.id);
+        for (const sess of JSON.parse(readFileSync(config.sessfile, "utf-8")).sessions) {
+            new Session(sess.data, sess.lifetime, sess.id);
         }
     } catch {
-        fs.writeFileSync(
+        writeFileSync(
             sessfile,
             JSON.stringify(
                 {
@@ -239,7 +315,7 @@ module.exports = (sessfile = config.sessfile) => {
     }
     return {
         sessions: sessions,
-        session: session,
+        Session: Session,
         configure: configure,
         find: findsession
     }

@@ -1,11 +1,14 @@
 {
   "name": "sessids",
-  "version": "2.0.2",
+  "version": "3.0.0",
   "description": "amazing session system for express",
-  "main": "./index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "test": "node -inspect index.js"
+    "test": "node -inspect index.js",
+    "build": "tsc ; cp express_override.d.ts dist"
   },
+  "type": "module",
+  "types": "dist",
   "keywords": [
     "session",
     "sessions",
@@ -18,5 +21,15 @@
     "url": "https://github.com/SweatyCircle439/sessids"
   },
   "author": "-SweatyCircle439",
-  "license": "GPL-3.0-only"
+  "license": "GPL-3.0-only",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@types/express": "^5.0.6"
+  }
 }
