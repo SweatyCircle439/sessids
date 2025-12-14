@@ -1,0 +1,22 @@
+{
+  "name": "sessids",
+  "version": "2.0.2",
+  "description": "amazing session system for express",
+  "main": "./index.js",
+  "scripts": {
+    "test": "node -inspect index.js"
+  },
+  "keywords": [
+    "session",
+    "sessions",
+    "express",
+    "sessid",
+    "sessids",
+    "sessionid"
+  ],
+  "repository": {
+    "url": "https://github.com/SweatyCircle439/sessids"
+  },
+  "author": "-SweatyCircle439",
+  "license": "GPL-3.0-only"
+}
