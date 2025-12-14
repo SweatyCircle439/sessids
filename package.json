@@ -22,7 +22,6 @@
   },
   "author": "-SweatyCircle439",
   "license": "GPL-3.0-only",
-  "private": true,
   "devDependencies": {
     "@types/bun": "latest"
   },
